@@ -1,0 +1,25 @@
+{
+  "name": "npwned",
+  "private": true,
+  "overrides": {
+    "serialize-javascript": "7.0.5",
+    "tar": "7.5.13",
+    "uuid": "14.0.0"
+  },
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @npwned/api",
+    "dev:web": "npm run start -w @npwned/web",
+    "build": "npm run build -w @npwned/api && npm run build -w @npwned/web",
+    "docker:build": "docker compose --env-file .env build",
+    "docker:up": "docker compose --env-file .env up -d",
+    "docker:down": "docker compose --env-file .env down",
+    "docker:seed": "docker compose --env-file .env run --rm api node apps/api/dist/scripts/seed.js",
+    "docker:logs": "docker compose --env-file .env logs -f --tail=200",
+    "docker:mongo-tool": "docker compose -f docker-compose.mongo.yml up -d",
+    "aggregate-search-stats": "npm run aggregate-search-stats -w @npwned/api"
+  }
+}

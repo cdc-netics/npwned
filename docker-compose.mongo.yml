@@ -1,0 +1,28 @@
+# Solo MongoDB (herramienta / desarrollo híbrido). Volumen persistente con nombre propio.
+# Uso: npm run docker:mongo-tool
+
+services:
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    stop_grace_period: 60s
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_tool_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: npwned
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  mongo_tool_data:
+    name: npwned_mongo_tool_data
+    driver: local

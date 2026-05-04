@@ -1,0 +1,214 @@
+<header class="top">
+  <div>
+    <h1>Panel</h1>
+    <p class="muted">Incidentes y cuentas de administración.</p>
+  </div>
+  <div class="actions">
+    <a routerLink="/admin/ingest">Ingesta de listas</a>
+    <a routerLink="/">Sitio público</a>
+    <button type="button" class="ghost" (click)="logout()">Salir</button>
+  </div>
+</header>
+
+<p class="error" *ngIf="error()">{{ error() }}</p>
+
+<div class="card" *ngIf="loading()">Cargando…</div>
+
+<ng-container *ngIf="!loading() && !error()">
+  <h2 class="section-title">Búsquedas (últimos 7 días, UTC)</h2>
+  <p class="muted small">
+    Los eventos crudos están en <code>search_events</code>. Aquí se muestran totales agregados en
+    tiempo real; el botón escribe un resumen del <strong>ayer UTC</strong> en
+    <code>search_stats_daily</code> (útil para cron o informes).
+  </p>
+  <div class="subcard" *ngIf="overview() as o">
+    <p class="stats-line">
+      <strong>Total</strong> {{ o.total }} · <strong>Hits</strong> {{ o.hits }} ·
+      <strong>Miss</strong> {{ o.misses }} · <strong>Inválidas</strong> {{ o.invalid }}
+    </p>
+    <p class="muted small">Rango: {{ o.from }} → {{ o.to }}</p>
+    <div class="two-col">
+      <div>
+        <h4>Por tipo</h4>
+        <ul class="kv">
+          <li *ngFor="let e of o.byQueryType | keyvalue">
+            <code>{{ e.key }}</code> — {{ e.value }}
+          </li>
+        </ul>
+      </div>
+      <div>
+        <h4>Top dominios (correo)</h4>
+        <ul class="kv">
+          <li *ngFor="let d of o.topDomains.slice(0, 10)">
+            <code>{{ d.domain }}</code> — {{ d.count }}
+          </li>
+        </ul>
+        <p class="muted small" *ngIf="o.topDomains.length === 0">Sin dominios en el periodo.</p>
+      </div>
+    </div>
+    <button
+      type="button"
+      class="ghost-btn"
+      [disabled]="materializing()"
+      (click)="materializeYesterday()"
+    >
+      {{ materializing() ? "Guardando…" : "Materializar ayer (UTC)" }}
+    </button>
+    <p class="feedback" *ngIf="materializeMsg()">{{ materializeMsg() }}</p>
+  </div>
+
+  <h2 class="section-title">Incidentes</h2>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Nombre</th>
+        <th>Slug</th>
+        <th>Etiquetas</th>
+        <th>Fecha incidente</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let b of items()">
+        <td>{{ b.name }}</td>
+        <td><code>{{ b.slug }}</code></td>
+        <td>
+          <span class="tag" *ngFor="let t of b.tags">{{ t }}</span>
+          <span *ngIf="!b.tags.length" class="muted">—</span>
+        </td>
+        <td>
+          <span *ngIf="b.incidentDate as d">{{ d | date : "mediumDate" }}</span>
+          <span *ngIf="!b.incidentDate" class="muted">—</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <p class="empty" *ngIf="items().length === 0">
+    Aún no hay incidentes. Ejecuta el seed de la API o crea uno con <code>POST /api/admin/breaches</code>.
+  </p>
+
+  <h2 class="section-title">Quitar una entrada del índice</h2>
+  <p class="muted small">
+    Borra una fila de <code>leak_index</code> para un incidente. El servidor normaliza el valor igual que en
+    la ingesta (correo con dominio con punto, RUT con dígito verificador, etc.).
+  </p>
+  <div class="subcard" *ngIf="items().length > 0">
+    <label class="field">
+      <span>Incidente</span>
+      <select class="input" name="ldb" [(ngModel)]="leakDelBreachId">
+        <option value="">— Elige —</option>
+        <option *ngFor="let b of items()" [value]="b.id">{{ b.name }} ({{ b.slug }})</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>Tipo</span>
+      <select class="input" name="ldt" [(ngModel)]="leakDelType">
+        <option value="email">Correo</option>
+        <option value="rut_cl">RUT</option>
+        <option value="username">Usuario</option>
+        <option value="display_name">Nombre</option>
+      </select>
+    </label>
+    <label class="field">
+      <span>Valor</span>
+      <input class="input" name="ldv" [(ngModel)]="leakDelValue" autocomplete="off" />
+    </label>
+    <button type="button" class="ghost-btn" [disabled]="leakDeleting()" (click)="deleteLeakIndexRow()">
+      {{ leakDeleting() ? "Borrando…" : "Borrar del índice" }}
+    </button>
+    <p class="feedback" *ngIf="leakDelMsg()">{{ leakDelMsg() }}</p>
+  </div>
+
+  <h2 class="section-title">Borrar incidente completo</h2>
+  <p class="muted small warn-copy">
+    Quita el incidente de <code>breach_sources</code> y <strong>todas</strong> las filas de
+    <code>leak_index</code> ligadas a él. Irreversible. Los eventos de búsqueda históricos no se borran.
+  </p>
+  <div class="subcard" *ngIf="items().length > 0">
+    <label class="field">
+      <span>Incidente a eliminar</span>
+      <select class="input" name="bfd" [(ngModel)]="breachFullDeleteId">
+        <option value="">— Elige —</option>
+        <option *ngFor="let b of items()" [value]="b.id">{{ b.name }} (slug: {{ b.slug }})</option>
+      </select>
+    </label>
+    <button type="button" class="ghost-btn danger" [disabled]="breachFullDeleting()" (click)="openBreachDeleteDialog()">
+      Borrar incidente y todo su índice…
+    </button>
+    <p class="feedback" *ngIf="breachFullMsg()">{{ breachFullMsg() }}</p>
+  </div>
+
+  <div class="modal-backdrop" *ngIf="breachDeleteDialogOpen()" (click)="closeBreachDeleteDialog()">
+    <div class="modal-dialog" (click)="$event.stopPropagation()" role="dialog" aria-modal="true" aria-labelledby="del-breach-title">
+      <h3 id="del-breach-title">Confirmar borrado</h3>
+      <p class="modal-lede">
+        Se eliminará el incidente <strong>{{ selectedBreachDeleteLabel() }}</strong> y todas sus entradas en
+        <code>leak_index</code>. Esta acción no se puede deshacer.
+      </p>
+      <div class="modal-actions">
+        <button type="button" class="ghost" [disabled]="breachFullDeleting()" (click)="closeBreachDeleteDialog()">
+          Cancelar
+        </button>
+        <button
+          type="button"
+          class="ghost-btn danger"
+          [disabled]="breachFullDeleting()"
+          (click)="confirmDeleteEntireBreach()"
+        >
+          {{ breachFullDeleting() ? "Borrando…" : "Sí, eliminar definitivamente" }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title">Administradores</h2>
+  <p class="muted small">
+    Campos en base de datos: <code>username</code>, <code>passwordHash</code> (bcrypt),
+    <code>createdAt</code>, <code>createdBy</code> (id del admin que creó la cuenta; el primero no tiene).
+  </p>
+  <table class="table">
+    <thead>
+      <tr>
+        <th>Usuario</th>
+        <th>Creado</th>
+        <th>Creado por</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let u of users()">
+        <td>{{ u.username }}</td>
+        <td>
+          <span *ngIf="u.createdAt as c">{{ c | date : "short" }}</span>
+          <span *ngIf="!u.createdAt" class="muted">—</span>
+        </td>
+        <td><code class="small-code">{{ u.createdBy ?? "—" }}</code></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="subcard">
+    <h3>Nuevo administrador</h3>
+    <label class="field">
+      <span>Usuario</span>
+      <input class="input" [(ngModel)]="newUsername" name="nu" autocomplete="off" />
+    </label>
+    <label class="field">
+      <span>Contraseña (mín. 12 en servidor)</span>
+      <input
+        class="input"
+        type="password"
+        [(ngModel)]="newPassword"
+        name="np"
+        autocomplete="new-password"
+      />
+    </label>
+    <button
+      type="button"
+      class="primary"
+      [disabled]="creatingUser()"
+      (click)="createUser()"
+    >
+      {{ creatingUser() ? "Creando…" : "Crear usuario" }}
+    </button>
+    <p class="feedback" *ngIf="userFeedback()">{{ userFeedback() }}</p>
+  </div>
+</ng-container>

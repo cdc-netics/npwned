@@ -1,0 +1,146 @@
+<section class="hero">
+  <p class="eyebrow">Comprobación de filtraciones</p>
+  <h1>¿Tus datos aparecen en nuestras listas indexadas?</h1>
+  <p class="lede">
+    Ingresa correo (también patrones como <code>*&#64;ejemplo.cl</code>: verás las direcciones completas que
+    coincidan, hasta el tope del servidor), RUT, usuario o nombre. En <strong>Usuario</strong> se busca el
+    nick indexado y también correos cuyo texto antes del <code>@</code> coincide con lo que escribes (sin
+    incluir el <code>@</code>). No mostramos contraseñas.
+  </p>
+</section>
+
+<div class="card">
+  <div class="tabs tabs-four" role="tablist">
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="kind() === 'email'"
+      [class.active]="kind() === 'email'"
+      (click)="setKind('email')"
+    >
+      Correo
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="kind() === 'rut'"
+      [class.active]="kind() === 'rut'"
+      (click)="setKind('rut')"
+    >
+      RUT
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="kind() === 'username'"
+      [class.active]="kind() === 'username'"
+      (click)="setKind('username')"
+    >
+      Usuario
+    </button>
+    <button
+      type="button"
+      role="tab"
+      [attr.aria-selected]="kind() === 'display_name'"
+      [class.active]="kind() === 'display_name'"
+      (click)="setKind('display_name')"
+    >
+      Nombre
+    </button>
+  </div>
+
+  <label class="field">
+    <span class="label">{{ fieldLabel() }}</span>
+    <input
+      class="input"
+      [type]="inputType()"
+      name="q"
+      [(ngModel)]="value"
+      [placeholder]="fieldPlaceholder()"
+      autocomplete="off"
+      (keyup.enter)="submit()"
+    />
+  </label>
+
+  <button class="primary" type="button" [disabled]="loading()" (click)="submit()">
+    {{ loading() ? "Consultando…" : "Comprobar" }}
+  </button>
+
+  <p class="error" *ngIf="error()">{{ error() }}</p>
+</div>
+
+<div class="card outcome" *ngIf="result() as r">
+  <ng-container *ngIf="r.invalid">
+    <h2>Formato no válido</h2>
+    <p>
+      Revisa el dato: el correo debe ser válido o un patrón con <code>*</code> (p. ej.
+      <code>*&#64;dominio.cl</code>, dominio con punto); el RUT chileno con dígito verificador (o solo cuerpo
+      si aplica); en <strong>Usuario</strong> un nick sin espacios ni <code>@</code> (también encuentra
+      correos indexados con ese mismo usuario antes del <code>@</code>); el nombre o apodo con letras
+      (puede ser una sola palabra; sin <code>_</code> de nick).
+    </p>
+  </ng-container>
+
+  <ng-container *ngIf="!r.invalid && !r.found">
+    <h2>Buenas noticias</h2>
+    <p>
+      No encontramos este dato en las filtraciones indexadas hasta ahora. Eso no
+      garantiza que nunca haya existido otra copia fuera de este sistema.
+    </p>
+  </ng-container>
+
+  <ng-container *ngIf="!r.invalid && r.found">
+    <h2>Consta en {{ r.breaches.length }} incidente(s)</h2>
+    <p class="muted" *ngIf="r.wildcard && r.matchCount !== undefined">
+      <strong>Correos completos</strong> (patrón con <code>*</code>): <strong>{{ r.matchCount }}</strong>
+      fila(s) en el índice
+      <ng-container *ngIf="r.matchCountTruncated"> (tope alcanzado; puede haber más)</ng-container>.
+      <ng-container *ngIf="r.emails?.length"> Lista ({{ r.emails!.length }} dirección(es) distinta(s)): </ng-container>
+    </p>
+    <p class="muted small warn-copy" *ngIf="r.wildcard && r.emails?.length">
+      Datos personales: no reenvíes listas ni uses la información fuera de una finalidad legítima (p. ej.
+      avisar a quien corresponda).
+    </p>
+    <pre class="email-dump mono" *ngIf="r.wildcard && r.emails?.length">{{ r.emails!.join("\n") }}</pre>
+
+    <ng-container *ngIf="!r.wildcard && r.usernameEmailMatches?.length">
+      <p class="muted">
+        <strong>Correos con este usuario</strong> (parte antes del <code>@</code>):
+        <strong>{{ r.usernameEmailMatches!.length }}</strong>
+        <ng-container *ngIf="r.usernameEmailMatchesTruncated"> (tope alcanzado; puede haber más)</ng-container>
+      </p>
+      <p class="muted small warn-copy">Misma cautela con datos personales que arriba.</p>
+      <pre class="email-dump mono">{{ r.usernameEmailMatches!.join("\n") }}</pre>
+    </ng-container>
+
+    <ng-container *ngIf="!r.wildcard && r.displayNameMatches?.length">
+      <p class="muted">
+        <strong>Nombres coincidentes en el índice</strong> ({{ r.displayNameMatches!.length }} variante(s))
+        <ng-container *ngIf="r.displayNameMatchesTruncated"> — tope alcanzado; puede haber más filas</ng-container>:
+      </p>
+      <p class="muted small warn-copy">Texto tal como quedó registrado en la fuga indexada.</p>
+      <pre class="email-dump mono">{{ r.displayNameMatches!.join("\n") }}</pre>
+    </ng-container>
+
+    <p class="muted" *ngIf="!r.wildcard">
+      Aparece en las bases cargadas con el siguiente detalle agregado.
+    </p>
+    <ul class="breach-list">
+      <li *ngFor="let b of r.breaches">
+        <div class="breach-name">{{ b.name }}</div>
+        <div class="breach-tags" *ngIf="b.tags.length">
+          <span class="tag" *ngFor="let t of b.tags">{{ t }}</span>
+        </div>
+        <div class="breach-meta" *ngIf="b.incidentDate as d">
+          Fecha referencia: {{ d | date : "mediumDate" }}
+        </div>
+        <p class="breach-desc" *ngIf="b.description">{{ b.description }}</p>
+      </li>
+    </ul>
+  </ng-container>
+</div>
+
+<p class="hint">
+  ¿Operas el sistema?
+  <a routerLink="/admin/login">Acceso administradores</a>
+</p>

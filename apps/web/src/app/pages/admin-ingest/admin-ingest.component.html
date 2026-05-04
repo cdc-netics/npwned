@@ -1,0 +1,526 @@
+<header class="top">
+  <div>
+    <h1>Ingesta de listas</h1>
+    <p class="muted">
+      Vista prevía con perfil configurable; solo tras revisar se indexa el archivo completo en el
+      incidente elegido.
+    </p>
+  </div>
+  <div class="actions">
+    <a routerLink="/admin">Volver al panel</a>
+    <a routerLink="/">Sitio público</a>
+  </div>
+</header>
+
+<p class="error" *ngIf="listError()">{{ listError() }}</p>
+
+<div class="card" *ngIf="loadingList()">Cargando incidentes…</div>
+
+<ng-container *ngIf="!loadingList() && !listError()">
+  <div class="notice">
+    <strong>Por qué no es “todo automático”:</strong> aquí defines cómo leer cada línea (combo, CSV,
+    texto plano), ves fila a fila qué quedaría indexado y qué se descarta. El volcado por navegador
+    <strong>transmite cada archivo en streaming</strong> al servidor (sin guardar el fichero completo en
+    disco en la API), adecuado para listas grandes; para <strong>millones de líneas o archivos de
+    muchos GB</strong> usa el script <code>ingestFile</code> en Docker con un volumen montado (ver
+    README). Puedes encadenar varios archivos en un solo clic o volver más tarde al mismo incidente.
+  </div>
+
+  <div class="card form-card">
+    <h2>1. Incidente y formato</h2>
+    <p class="muted small">
+      La <strong>vista previa</strong> no necesita incidente (solo analiza líneas). Cada
+      <strong>volcado</strong> de archivo va a <strong>un</strong> incidente que tú eliges en el
+      desplegable; puedes tener <strong>tantos incidentes como quieras</strong> (cada lista o fuente
+      suele ser uno distinto). Si solo ves uno, es que en la base de datos solo existe ese — crea
+      más aquí o desde el panel admin.
+    </p>
+
+    <div class="warn-box" *ngIf="breaches().length === 0">
+      <p>
+        <strong>No hay incidentes en el sistema.</strong> Sin uno, el desplegable queda vacío y no
+        puedes confirmar la ingesta. Crea aquí el primero o ejecuta
+        <code>npm run docker:seed</code> / seed en la API para la demo.
+      </p>
+      <label class="field">
+        <span>Nombre del incidente</span>
+        <input
+          class="input"
+          name="cn"
+          [(ngModel)]="createName"
+          (blur)="fillSlugFromName()"
+          placeholder="Ej. Filtración lista X"
+        />
+      </label>
+      <label class="field">
+        <span>Slug (único, minúsculas y guiones)</span>
+        <div class="inline-actions">
+          <input class="input grow" name="cs" [(ngModel)]="createSlug" placeholder="ej. lista-x-2024" />
+          <button type="button" class="ghost-btn" (click)="fillSlugFromName()">Sugerir slug</button>
+        </div>
+      </label>
+      <label class="field">
+        <span>Descripción (opcional)</span>
+        <textarea
+          class="input textarea"
+          name="cdesc"
+          rows="2"
+          [(ngModel)]="createDescription"
+          placeholder="Texto que verá el usuario público al consultar."
+        ></textarea>
+      </label>
+      <button type="button" class="primary" [disabled]="creatingIncident()" (click)="createIncident()">
+        {{ creatingIncident() ? "Creando…" : "Crear incidente" }}
+      </button>
+      <p class="feedback" *ngIf="createFeedback()">{{ createFeedback() }}</p>
+    </div>
+
+    <ng-container *ngIf="breaches().length > 0">
+      <label class="field">
+        <span>Incidente destino (este volcado)</span>
+        <div class="breach-select-row">
+          <select class="input grow" name="breach" [(ngModel)]="breachId">
+            <option *ngFor="let b of breaches()" [value]="b.id">
+              {{ b.name }} ({{ b.slug }})
+            </option>
+          </select>
+          <button
+            type="button"
+            class="ghost-btn shrink-0"
+            (click)="loadBreaches(false)"
+            [disabled]="breachesRefreshing()"
+          >
+            {{ breachesRefreshing() ? "Actualizando…" : "Actualizar lista" }}
+          </button>
+        </div>
+        <p class="muted tiny field-hint">
+          {{ breaches().length }} incidente(s) en el sistema. Elige cuál recibe <em>este</em> archivo;
+          para otro archivo u otra fuente, crea otro incidente o cámbialo aquí antes de confirmar.
+        </p>
+        <p class="error tiny" *ngIf="breachListRefreshError()">{{ breachListRefreshError() }}</p>
+      </label>
+
+      <details class="sub-create">
+        <summary>Crear otro incidente</summary>
+        <p class="muted small sub-create-lead">
+          Mismo formulario que cuando no hay ninguno: nombre, slug único y opcional descripción.
+        </p>
+        <label class="field">
+          <span>Nombre del incidente</span>
+          <input
+            class="input"
+            name="cn2"
+            [(ngModel)]="createName"
+            (blur)="fillSlugFromName()"
+            placeholder="Ej. Otra lista / otra fuente"
+          />
+        </label>
+        <label class="field">
+          <span>Slug (único, minúsculas y guiones)</span>
+          <div class="inline-actions">
+            <input class="input grow" name="cs2" [(ngModel)]="createSlug" placeholder="ej. otra-fuente-2026" />
+            <button type="button" class="ghost-btn" (click)="fillSlugFromName()">Sugerir slug</button>
+          </div>
+        </label>
+        <label class="field">
+          <span>Descripción (opcional)</span>
+          <textarea
+            class="input textarea"
+            name="cdesc2"
+            rows="2"
+            [(ngModel)]="createDescription"
+            placeholder="Texto que verá el usuario público al consultar."
+          ></textarea>
+        </label>
+        <button type="button" class="primary" [disabled]="creatingIncident()" (click)="createIncident()">
+          {{ creatingIncident() ? "Creando…" : "Crear incidente" }}
+        </button>
+        <p class="feedback" *ngIf="createFeedback()">{{ createFeedback() }}</p>
+      </details>
+    </ng-container>
+
+    <div class="field">
+      <span>Modo de lectura</span>
+      <div class="radio-row">
+        <label class="radio-block">
+          <input type="radio" name="pm" value="combo" [(ngModel)]="profileMode" />
+          <span>
+            <strong>Combo</strong> (tab, <code>|</code>, <code>;</code> o <code>:</code>; en
+            <strong>auto</strong> elige el primer separador presente). Con <strong>varias columnas
+            separadas por <code>|</code></strong> (p. ej. código | totalizador | RUT | nombre) se
+            toma automáticamente el <strong>RUT o correo</strong> con forma clara, no solo el texto antes
+            del primer pipe. URLs con <code>/login</code> (p. ej. Clave Única) siguen usando el tramo
+            entre <code>/login</code> y la clave, no el <code>:</code> de <code>https:</code>.
+          </span>
+        </label>
+        <label class="radio-block">
+          <input type="radio" name="pm" value="plain" [(ngModel)]="profileMode" />
+          <span>
+            <strong>Una celda por línea</strong> — texto completo o URL https: si la línea es
+            <code>https://…/ruta:usuario:clave</code> o similar, se elige <strong>solo</strong> el trozo que
+            encaje como correo, RUT o (si activas la casilla) usuario/nombre; la ruta y la contraseña no se
+            indexan. URLs con <code>/login</code> siguen la regla de Clave Única automáticamente.
+          </span>
+        </label>
+        <label class="radio-block">
+          <input type="radio" name="pm" value="csv" [(ngModel)]="profileMode" />
+          <span>
+            <strong>CSV / tabla con separadores</strong> — coma, punto y coma o
+            <code>|</code> (exportaciones tipo «código | totalizador | RUT | nombre | …»). Puedes fijar
+            el índice de columna o activar <strong>columna automática</strong> (primer RUT con guion/DV o
+            correo; ignora cabeceras decorativas sin números).
+          </span>
+        </label>
+        <label class="radio-block">
+          <input type="radio" name="pm" value="regex" [(ngModel)]="profileMode" />
+          <span>
+            <strong>Plantilla regex (último recurso, masivo)</strong> — una expresión por línea con al
+            menos un <strong>grupo entre paréntesis</strong> <code>(…)</code>: se indexa lo capturado
+            (luego se aplica la misma detección de correo / RUT / usuario / nombre que el resto de modos).
+            Abajo hay <strong>atajos</strong> para no escribir regex a mano; solo si los modos anteriores
+            no bastan.
+          </span>
+        </label>
+      </div>
+    </div>
+
+    <ng-container *ngIf="profileMode === 'combo'">
+      <label class="field">
+        <span>Separador combo</span>
+        <select class="input" name="cd" [(ngModel)]="comboDelimiter">
+          <option value="auto">Automático (tab → | → ; → :)</option>
+          <option value="tab">Tabulador</option>
+          <option value="|">Barra vertical |</option>
+          <option value=";">Punto y coma</option>
+          <option value=":">Dos puntos</option>
+        </select>
+      </label>
+    </ng-container>
+
+    <ng-container *ngIf="profileMode === 'csv'">
+      <label class="field">
+        <span>Separador entre columnas</span>
+        <select class="input" name="csvsep" [(ngModel)]="csvSeparator">
+          <option value=",">Coma (,)</option>
+          <option value=";">Punto y coma (;)</option>
+          <option value="|">Pipe (|)</option>
+        </select>
+      </label>
+      <label class="field checkbox-line">
+        <input type="checkbox" name="csvauto" [(ngModel)]="csvAutoColumn" />
+        <span>
+          <strong>Columna automática</strong> — recorre las celdas de izquierda a derecha y toma la
+          primera con <strong>RUT Chile</strong> en forma típica (p. ej. <code>4319473-9</code>,
+          <code>12.345.678-9</code> o 9 dígitos seguidos) o <strong>correo</strong>. Así no hace falta
+          contar columnas en listas con <code>|</code> y se evita indexar el totalizador de 6 dígitos como
+          si fuera RUT.
+        </span>
+      </label>
+      <label class="field" *ngIf="!csvAutoColumn">
+        <span>Índice de columna (0 = primera)</span>
+        <input class="input" type="number" min="0" name="cix" [(ngModel)]="csvColumnIndex" />
+      </label>
+    </ng-container>
+
+    <ng-container *ngIf="profileMode === 'regex'">
+      <div class="regex-panel">
+        <p class="muted small">
+          La API valida el patrón y limita el tamaño por línea. Evita patrones enormemente complejos
+          (pueden ir lentos). Marca <strong>i</strong> para mayúsculas/minúsculas, <strong>m</strong> si
+          una “línea” trae varias filas lógicas.
+        </p>
+        <div class="preset-btns">
+          <span class="preset-label">Atajos:</span>
+          <button type="button" class="ghost-btn tiny" (click)="applyRegexPreset('rut')">RUT con DV</button>
+          <button type="button" class="ghost-btn tiny" (click)="applyRegexPreset('email')">Correo</button>
+          <button type="button" class="ghost-btn tiny" (click)="applyRegexPreset('username_loose')">
+            Texto tipo usuario
+          </button>
+          <span class="preset-pipe">
+            <label class="inline-num">
+              <span class="muted tiny">Columna</span>
+              <input class="input tiny-num" type="number" min="1" max="64" [(ngModel)]="regexPipeColumn" />
+            </label>
+            <button type="button" class="ghost-btn tiny" (click)="applyRegexPreset('pipe_column')">
+              Texto en columna (pipes)
+            </button>
+          </span>
+        </div>
+        <label class="field">
+          <span>Patrón (JavaScript / ECMAScript)</span>
+          <textarea
+            class="input textarea regex-pattern"
+            name="rxp"
+            rows="3"
+            spellcheck="false"
+            [(ngModel)]="regexPattern"
+            placeholder="Ej. (\\d{7,8}-[\\dkK]) o un grupo que rodee lo que quieras indexar"
+          ></textarea>
+        </label>
+        <label class="field">
+          <span>Grupo de captura a usar (0 = coincidencia entera; 1 = primer paréntesis)</span>
+          <input class="input" type="number" min="0" max="32" name="rxg" [(ngModel)]="regexCaptureGroup" />
+        </label>
+        <div class="field checkbox-row-flags">
+          <label class="checkbox-line tight"
+            ><input type="checkbox" name="rxi" [(ngModel)]="regexFlagI" /> <span>Ignorar mayúsc./minús. (i)</span></label
+          >
+          <label class="checkbox-line tight"
+            ><input type="checkbox" name="rxm" [(ngModel)]="regexFlagM" /> <span>Multilínea (m)</span></label
+          >
+        </div>
+      </div>
+    </ng-container>
+
+    <label class="field checkbox-line">
+      <input type="checkbox" name="dpt" [(ngModel)]="detectPlusText" />
+      <span
+        ><strong>También usuario / nombre</strong> — además de correo y RUT, indexa celdas como
+        <em>usuario</em> (sin espacio, p. ej. <code>player_one</code>) o
+        <em>nombre</em> o apodo con letras (p. ej. <code>Juan Pérez</code>, <code>Jose</code>; sin
+        <code>_</code> de nick).
+        Desactivado por defecto para no llenar el índice con ruido.</span
+      >
+    </label>
+
+    <h2>2. Archivos</h2>
+    <p class="muted small">
+      Puedes elegir <strong>varios archivos a la vez</strong> (mismo incidente y mismo perfil): al
+      confirmar se indexan <strong>en secuencia</strong>. Más tarde puedes volver con otros archivos al
+      mismo incidente: el índice hace <strong>upsert</strong> (suma filas nuevas; si el id ya existía en
+      ese incidente, se actualiza).
+    </p>
+    <label class="field">
+      <span>Archivo(s) — UTF-8 recomendado</span>
+      <input
+        #ingestFileInput
+        type="file"
+        name="f"
+        multiple
+        (change)="onFilePick($event)"
+      />
+    </label>
+    <ul class="file-pick-list" *ngIf="selectedFiles().length > 0">
+      <li *ngFor="let f of selectedFiles(); let i = index">
+        <span class="mono">{{ f.name }}</span>
+        <span class="muted tiny">({{ (f.size / 1024) | number : "1.0-0" }} KB)</span>
+      </li>
+    </ul>
+    <label class="field" *ngIf="selectedFiles().length > 1">
+      <span>Vista previa de qué archivo</span>
+      <select
+        class="input"
+        name="pidx"
+        [ngModel]="previewFileIndex()"
+        (ngModelChange)="onPreviewFileIndexChange($event)"
+      >
+        <option *ngFor="let f of selectedFiles(); let i = index" [ngValue]="i">{{ f.name }}</option>
+      </select>
+    </label>
+    <p class="muted small">
+      La vista previa usa como máximo los primeros {{ maxPreviewLines }} líneas o ~1,8 MB del
+      <strong>archivo elegido arriba</strong>; la confirmación indexa <strong>todos</strong> los
+      seleccionados, cada uno entero.
+    </p>
+
+    <div class="btn-row">
+      <button type="button" class="primary" [disabled]="previewLoading()" (click)="runPreview()">
+        {{ previewLoading() ? "Analizando…" : "Generar vista previa" }}
+      </button>
+    </div>
+    <p class="error" *ngIf="previewError()">{{ previewError() }}</p>
+  </div>
+
+  <div class="card" *ngIf="preview() as pr">
+    <h2>3. Revisión</h2>
+    <div class="stats">
+      <span><strong>Enviadas</strong> {{ pr.stats.linesSubmitted }}</span>
+      <span class="ok"><strong>Indexarían</strong> {{ pr.stats.ok }}</span>
+      <span><strong>Ignoradas</strong> {{ pr.stats.skipLine }}</span>
+      <span class="warn"><strong>Sin celda</strong> {{ pr.stats.noCell }}</span>
+      <span class="warn"><strong>No id válido</strong> {{ pr.stats.invalidId }}</span>
+    </div>
+    <p class="muted small ingest-note">
+      Las columnas <strong>Cómo se leyó</strong> y <strong>Celda tomada</strong> muestran qué campo se
+      usa antes de normalizar. El volcado <strong>vuelve a leer el archivo</strong> con el mismo perfil:
+      lo que marques en <strong>Vista previa</strong> con «Aplicar» sirve para comprobar reglas y ver la
+      fila en verde, pero no sustituye líneas en el fichero. Para que el volcado coincida, ajusta el
+      perfil (en <strong>una celda</strong> ya se separan solas las URL con campos tras
+      <code>:</code> o con <code>/login</code>) o exporta una lista ya limpia. Las filas
+      <strong>OK</strong> con URL o «toda la línea (modo plano)» también muestran reparación por si el
+      automático falló.
+    </p>
+
+    <div class="repair-help" role="note">
+      <strong>Reparación manual</strong> (filas en duda):
+      <ol>
+        <li>
+          En <strong>Vista previa</strong>, edita el cuadro de texto: deja solo lo que quieres indexar
+          (p. ej. el RUT <code>174443602</code> o con DV <code>17.444.360-2</code>, o un correo válido).
+        </li>
+        <li>Pulsa <strong>Aplicar</strong>. Si las reglas activas lo reconocen, la fila pasa a OK.</li>
+        <li>
+          <strong>Restaurar</strong> vuelve al valor detectado por el perfil. Las URLs largas se pueden
+          pegar y recortar en el cuadro; no hace falta reescribir toda la línea fuera de la app.
+        </li>
+        <li>
+          Si ves <strong>segmentos</strong> numerados (ruta, campos con «:»), pulsa uno para copiarlo al
+          cuadro y <strong>Aplicar</strong> (útil si el automático eligió mal el trozo). La ruta y la
+          contraseña no se indexan.
+        </li>
+      </ol>
+    </div>
+
+    <div class="filter-row">
+      <span>Mostrar:</span>
+      <button type="button" class="chip" [class.on]="rowFilter() === 'all'" (click)="rowFilter.set('all')">
+        Todas
+      </button>
+      <button type="button" class="chip" [class.on]="rowFilter() === 'ok'" (click)="rowFilter.set('ok')">
+        Solo OK
+      </button>
+      <button
+        type="button"
+        class="chip"
+        [class.on]="rowFilter() === 'problems'"
+        (click)="rowFilter.set('problems')"
+      >
+        Solo dudas / errores
+      </button>
+    </div>
+
+    <div class="table-wrap ingest-table">
+      <table class="grid">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Estado</th>
+            <th>Línea (recorte)</th>
+            <th>Cómo se leyó</th>
+            <th>Celda tomada</th>
+            <th>Id normalizado</th>
+            <th>Vista previa</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let row of displayRows(); trackBy: trackByLineNo" [ngClass]="rowClass(row.status)">
+            <td>{{ row.lineNo }}</td>
+            <td>{{ statusLabel(row.status) }}</td>
+            <td class="mono pre">{{ row.rawTruncated }}</td>
+            <td class="small muted">{{ row.extractionMethod || "—" }}</td>
+            <td class="mono small">{{ row.extractedCell || "—" }}</td>
+            <td class="mono small">
+              <ng-container *ngIf="row.status === 'ok'">
+                <strong>{{ typeLabel(row.type) }}</strong> · {{ row.value }}
+              </ng-container>
+              <ng-container *ngIf="row.status !== 'ok'">—</ng-container>
+            </td>
+            <td class="repair-cell">
+              <ng-container *ngIf="showRepairUi(row); else noRepairCol">
+                <div class="url-colon-strip" *ngIf="showUrlColonStrip(row)">
+                  <div class="url-colon-base muted tiny" *ngIf="row.urlColonBaseUrl">
+                    Página (referencia, no indexada): <span class="mono">{{ row.urlColonBaseUrl }}</span>
+                  </div>
+                  <div class="seg-row">
+                    <button
+                      type="button"
+                      *ngFor="let seg of row.urlColonSegments; let i = index"
+                      class="seg-chip"
+                      [class.kind-path]="colonChipKind(row, i) === 'path'"
+                      [class.kind-id]="colonChipKind(row, i) === 'id'"
+                      [class.kind-pass]="colonChipKind(row, i) === 'pass'"
+                      [class.kind-neutral]="colonChipKind(row, i) === 'neutral'"
+                      [attr.title]="colonChipTitle(row, i)"
+                      (click)="pickColonSegment(row, i)"
+                    >
+                      <span class="seg-idx">{{ i }}</span>
+                      <span class="seg-txt mono">{{ colonSegPreview(seg) }}</span>
+                    </button>
+                  </div>
+                  <p class="muted tiny seg-hint">Pulsa un número para copiar ese trozo al cuadro; después Aplicar.</p>
+                </div>
+                <textarea
+                  class="input repair-input"
+                  rows="3"
+                  [ngModel]="repairDraftFor(row)"
+                  (ngModelChange)="onRepairDraftChange(row.lineNo, $event)"
+                  spellcheck="false"
+                  autocomplete="off"
+                  placeholder="Solo identificador: RUT (174443602 o 17.444.360-2) o correo con dominio. Borra el resto de la URL y pulsa Aplicar."
+                ></textarea>
+                <div class="repair-actions">
+                  <button type="button" class="ghost-btn tiny" (click)="applyRepair(row)">Aplicar</button>
+                  <button
+                    type="button"
+                    class="ghost-btn tiny"
+                    *ngIf="rowRepairs()[row.lineNo]"
+                    (click)="clearRepairRow(row.lineNo)"
+                  >
+                    Restaurar
+                  </button>
+                </div>
+                <p class="error tiny" *ngIf="repairErr(row.lineNo)">{{ repairErr(row.lineNo) }}</p>
+              </ng-container>
+              <ng-template #noRepairCol>—</ng-template>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2>4. Confirmar volcado</h2>
+    <p class="muted small">
+      Solo si el resumen y las filas problemáticas te parecen aceptables. Se harán upserts en
+      <code>leak_index</code> para este incidente (sin guardar contraseñas). Con varios archivos, el
+      orden es el de la lista; si uno falla, se sigue con los siguientes y verás el detalle abajo.
+    </p>
+    <div class="btn-row">
+      <button
+        type="button"
+        class="primary danger"
+        [disabled]="commitLoading() || !breachId || !preview() || commitFinished()"
+        (click)="commit()"
+      >
+        {{
+          commitFinished()
+            ? "Volcado ya completado"
+            : commitLoading()
+              ? (commitProgressLabel() || "Indexando…")
+              : selectedFileCount() > 1
+                ? "Confirmar e indexar " + selectedFileCount() + " archivos"
+                : "Confirmar e indexar archivo completo"
+        }}
+      </button>
+    </div>
+    <p class="error" *ngIf="commitError()">{{ commitError() }}</p>
+    <div class="success" *ngIf="commitFinished()">
+      <p>
+        <strong>Volcado terminado.</strong>
+        {{ commitOkCount() }} archivo(s) indexado(s) correctamente<span *ngIf="commitFailCount() > 0"
+          >; {{ commitFailCount() }} con error</span
+        >.
+      </p>
+      <ul class="commit-outcome-list">
+        <li *ngFor="let o of commitOutcomes()">
+          <ng-container *ngIf="o.result">
+            <span class="mono">{{ o.fileName }}</span> —
+            <strong>{{ o.result.linesRead }}</strong> líneas,
+            <strong>{{ o.result.identifiersRecognized }}</strong> ids,
+            <strong>{{ o.result.upsertedNew }}</strong> nuevos,
+            <strong>{{ o.result.matchedExisting }}</strong> ya existían.
+            <span class="muted tiny">{{ o.result.breachName }}</span>
+          </ng-container>
+          <ng-container *ngIf="o.error">
+            <span class="mono">{{ o.fileName }}</span> —
+            <span class="error">{{ o.error }}</span>
+          </ng-container>
+        </li>
+      </ul>
+      <p class="muted small">
+        Puedes <strong>Preparar otra ingesta</strong> para nuevos archivos, o volver a elegir archivos y
+        el mismo incidente más tarde: los datos se <strong>acumulan</strong> en ese incidente.
+      </p>
+      <button type="button" class="ghost-btn" (click)="prepareNewIngest()">Preparar otra ingesta</button>
+    </div>
+  </div>
+</ng-container>

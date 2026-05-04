@@ -1,0 +1,38 @@
+{
+  "name": "@npwned/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "seed": "tsx src/scripts/seed.ts",
+    "seed:prod": "node dist/scripts/seed.js",
+    "aggregate-search-stats": "tsx src/scripts/materializeSearchStats.ts",
+    "preview-leak-lines": "tsx src/scripts/previewLeakLines.ts",
+    "ingest-file": "tsx src/scripts/ingestFile.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "busboy": "^1.6.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.4.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mongodb": "^7.0.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/busboy": "^1.5.4",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^22.19.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.9.3"
+  }
+}

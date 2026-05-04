@@ -1,0 +1,14 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.idea
+.vscode
+**/*.md
+.env
+.env.*
+apps/api/.env
+!.env.example
+!**/.env.example
+*.txt
+npm-debug.log*

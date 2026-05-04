@@ -1,0 +1,83 @@
+:host {
+  display: block;
+  min-height: 70vh;
+  padding: 2rem 1.25rem;
+}
+
+.wrap {
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 1rem;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.back:hover {
+  color: var(--accent);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.5rem;
+}
+
+.muted {
+  margin: 0 0 1.25rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
+}
+
+.field span {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.input {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+  font-size: 1rem;
+  background: var(--bg);
+}
+
+.primary {
+  width: 100%;
+  margin-top: 0.25rem;
+  border: none;
+  border-radius: 12px;
+  padding: 0.85rem;
+  font-weight: 650;
+  cursor: pointer;
+  background: linear-gradient(165deg, var(--accent), var(--accent-2));
+  color: #fff;
+}
+
+.primary:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.error {
+  margin-top: 0.85rem;
+  color: var(--danger);
+}

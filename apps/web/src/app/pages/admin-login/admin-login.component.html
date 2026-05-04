@@ -1,0 +1,28 @@
+<div class="wrap">
+  <a class="back" routerLink="/">← Volver al inicio</a>
+  <div class="card">
+    <h1>Administración</h1>
+    <p class="muted">Acceso restringido a operadores del sistema.</p>
+
+    <label class="field">
+      <span>Usuario</span>
+      <input class="input" [(ngModel)]="username" name="u" autocomplete="username" />
+    </label>
+    <label class="field">
+      <span>Contraseña</span>
+      <input
+        class="input"
+        type="password"
+        [(ngModel)]="password"
+        name="p"
+        autocomplete="current-password"
+        (keyup.enter)="submit()"
+      />
+    </label>
+
+    <button class="primary" type="button" [disabled]="loading()" (click)="submit()">
+      {{ loading() ? "Entrando…" : "Entrar" }}
+    </button>
+    <p class="error" *ngIf="error()">{{ error() }}</p>
+  </div>
+</div>

@@ -1,0 +1,26 @@
+.shell-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 0;
+}
+
+.brand {
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  font-size: 1.25rem;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.tagline {
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.shell-main {
+  min-height: calc(100vh - 4rem);
+}

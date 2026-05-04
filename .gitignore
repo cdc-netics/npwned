@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.angular/
+*.log
+.env
+.env.local
+coverage/
+*.tsbuildinfo
+2500.txt

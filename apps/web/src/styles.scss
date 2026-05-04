@@ -1,0 +1,34 @@
+/**
+ * Estilos globales: paleta, tipografía y fondo de la aplicación.
+ */
+:root {
+  color-scheme: light;
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef1f7;
+  --text: #12151c;
+  --muted: #5c6475;
+  --border: #e2e6ef;
+  --accent: #3b5bdb;
+  --accent-2: #5f3dc4;
+  --danger: #c92a2a;
+  --shadow: 0 12px 40px rgb(18 21 28 / 0.08);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "DM Sans", system-ui, -apple-system, sans-serif;
+  background: radial-gradient(
+      1200px 500px at 10% -10%,
+      color-mix(in srgb, var(--accent) 18%, transparent),
+      transparent 55%
+    ),
+    var(--bg);
+  color: var(--text);
+}
