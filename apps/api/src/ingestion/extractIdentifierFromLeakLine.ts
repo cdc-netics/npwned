@@ -283,6 +283,18 @@ export function extractCredentialLeftFieldDetailed(
   delimiter: CredentialDelimiter,
 ): CredentialExtractDetail {
   const raw = stripLeadingBom(line).replace(/\r$/, "");
+  if (raw.includes("://")) {
+    const colonParsed = splitHttpsUrlColonPath(raw);
+    if (colonParsed && colonParsed.segments.length >= 2) {
+      const best = chooseBestUrlColonCandidate(colonParsed.segments, "email_rut_plus_text", undefined);
+      if (best.segment && best.segmentIndex !== undefined) {
+        return {
+          left: best.segment,
+          extractionMethod: `Combo: URL con «:» tras la ruta; se prioriza trozo ${best.segmentIndex} (${best.reason}).`,
+        };
+      }
+    }
+  }
   const hostLike = raw.match(/^[a-z0-9.-]+\.[a-z]{2,}:/i);
   if (hostLike) {
     const parts = raw.split(":");
