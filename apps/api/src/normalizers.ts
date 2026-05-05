@@ -234,6 +234,8 @@ export function normalizeLeakUsername(input: string): string | null {
   const v = input.normalize("NFKC").trim().toLocaleLowerCase("und");
   if (v.length < 2 || v.length > 64) return null;
   if (/\s|@/.test(v)) return null;
+  // Evita que números sueltos/fragmentos de tarjeta queden como "usuario".
+  if (!/\p{L}/u.test(v)) return null;
   if (normalizeEmailForLeakLine(input.trim())) return null;
   if (normalizeRutCl(v)) return null;
   if (!/^[\p{L}\p{N}._-]+$/u.test(v)) return null;

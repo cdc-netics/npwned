@@ -101,6 +101,10 @@ export type LeakLineExtractionMode =
 
 const CREDENTIAL_AUTO_ORDER = ["\t", "|", ";", ":"] as const;
 
+function normalizePipeLikeSeparators(input: string): string {
+  return input.replace(/[¦｜]/g, "|");
+}
+
 export type NormalizedIdentifier = {
   type: "email" | "rut_cl" | "username" | "display_name" | "national_id" | "internal_id";
   value: string;
@@ -282,7 +286,7 @@ export function extractCredentialLeftFieldDetailed(
   line: string,
   delimiter: CredentialDelimiter,
 ): CredentialExtractDetail {
-  const raw = stripLeadingBom(line).replace(/\r$/, "");
+  const raw = normalizePipeLikeSeparators(stripLeadingBom(line).replace(/\r$/, ""));
   if (raw.includes("://")) {
     const colonParsed = splitHttpsUrlColonPath(raw);
     if (colonParsed && colonParsed.segments.length >= 2) {
@@ -293,6 +297,11 @@ export function extractCredentialLeftFieldDetailed(
           extractionMethod: `Combo: URL con «:» tras la ruta; se prioriza trozo ${best.segmentIndex} (${best.reason}).`,
         };
       }
+      return {
+        left: null,
+        extractionMethod:
+          "Combo: URL con «:» tras la ruta, sin candidato de identidad útil (se omite para evitar falsos OK).",
+      };
     }
   }
   const hostLike = raw.match(/^[a-z0-9.-]+\.[a-z]{2,}:/i);
@@ -355,14 +364,15 @@ export function extractCredentialLeftField(
 
 /** Parser CSV mínimo (RFC4180 básico: comillas dobles y duplicadas). Soporta `|` para tablas exportadas. */
 export function splitCsvLineFields(line: string, separator: "," | ";" | "|" = ","): string[] {
+  const src = separator === "|" ? normalizePipeLikeSeparators(line) : line;
   const out: string[] = [];
   let cur = "";
   let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i]!;
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i]!;
     if (inQuotes) {
       if (c === '"') {
-        if (line[i + 1] === '"') {
+        if (src[i + 1] === '"') {
           cur += '"';
           i++;
         } else {
@@ -579,7 +589,7 @@ function extractCellForProfile(line: string, profile: LeakLineExtractionMode): E
   }
 
   if (profile.mode === "credential_pair") {
-    const pipeFields = raw.split("|");
+    const pipeFields = normalizePipeLikeSeparators(raw).split("|");
     const looksLikeMultiColumnPipe =
       (profile.delimiter === "|" || profile.delimiter === "auto") && pipeFields.length >= 3;
     if (looksLikeMultiColumnPipe) {

@@ -638,6 +638,8 @@ export class AdminIngestComponent implements OnInit {
     const em = row.extractionMethod ?? "";
     if (raw.includes("://")) return true;
     if (em.includes("Toda la línea (modo plano)")) return true;
+    if (em.includes("Combo automático: primer separador")) return true;
+    if (em.includes("Tabla con «|»") && (row.extractedCell ?? "").length < 7) return true;
     return false;
   }
 
