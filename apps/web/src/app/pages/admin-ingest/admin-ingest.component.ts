@@ -418,10 +418,7 @@ export class AdminIngestComponent implements OnInit {
     reader.onload = () => {
       const text = typeof reader.result === "string" ? reader.result : "";
       const lines = text.split(/\r?\n/).slice(0, MAX_PREVIEW_LINES);
-      const detect: IdentifierDetectMode = this.detectPlusText
-        ? "email_rut_plus_text"
-        : "email_rut";
-      this.adminApi.suggestIngestProfile(lines, detect).subscribe({
+      this.adminApi.suggestIngestProfile(lines).subscribe({
         next: (res: IngestProfileSuggestionResponse) => {
           this.applySuggestedProfile(res.suggested.profile);
           this.clearAllRepairs();

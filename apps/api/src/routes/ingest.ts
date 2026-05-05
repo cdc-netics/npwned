@@ -88,6 +88,48 @@ function evaluateProfile(lines: string[], profile: LeakLineExtractionMode, label
   return { profile, label, stats, score: profileScore(stats) };
 }
 
+function buildSuggestCandidates(
+  lines: string[],
+  detect: "email_rut" | "email_rut_plus_text" | undefined,
+): SuggestCandidate[] {
+  const withDetect = <T extends LeakLineExtractionMode>(p: T): T =>
+    detect ? ({ ...p, detect } as T) : p;
+  const detectLabel = detect === "email_rut_plus_text" ? " + usuario/nombre/id" : "";
+  return [
+    evaluateProfile(lines, withDetect({ mode: "plain" }), `Una celda por línea${detectLabel}`),
+    evaluateProfile(
+      lines,
+      withDetect({ mode: "credential_pair", delimiter: "auto" }),
+      `Combo automático (tab/|/;/:)${detectLabel}`,
+    ),
+    evaluateProfile(
+      lines,
+      withDetect({ mode: "credential_pair", delimiter: ":" }),
+      `Combo con :${detectLabel}`,
+    ),
+    evaluateProfile(
+      lines,
+      withDetect({ mode: "credential_pair", delimiter: "|" }),
+      `Combo con |${detectLabel}`,
+    ),
+    evaluateProfile(
+      lines,
+      withDetect({ mode: "csv", columnIndex: 0, separator: ",", columnPick: "auto_rut_email" }),
+      `CSV coma (columna automática)${detectLabel}`,
+    ),
+    evaluateProfile(
+      lines,
+      withDetect({ mode: "csv", columnIndex: 0, separator: ";", columnPick: "auto_rut_email" }),
+      `CSV punto y coma (columna automática)${detectLabel}`,
+    ),
+    evaluateProfile(
+      lines,
+      withDetect({ mode: "csv", columnIndex: 0, separator: "|", columnPick: "auto_rut_email" }),
+      `Tabla con | (columna automática)${detectLabel}`,
+    ),
+  ];
+}
+
 ingestRouter.post(
   "/preview-lines",
   /** Líneas largas en JSON escapan y crecen; margen holgado sobre ~1,8 MB de texto en cliente. */
@@ -124,34 +166,13 @@ ingestRouter.post(
       return;
     }
     const { lines, detect } = parsed.data;
-    const withDetect = <T extends LeakLineExtractionMode>(p: T): T =>
-      detect ? ({ ...p, detect } as T) : p;
-
-    const candidates: SuggestCandidate[] = [
-      evaluateProfile(lines, withDetect({ mode: "plain" }), "Una celda por línea"),
-      evaluateProfile(
-        lines,
-        withDetect({ mode: "credential_pair", delimiter: "auto" }),
-        "Combo automático (tab/|/;/:)",
-      ),
-      evaluateProfile(lines, withDetect({ mode: "credential_pair", delimiter: ":" }), "Combo con :"),
-      evaluateProfile(lines, withDetect({ mode: "credential_pair", delimiter: "|" }), "Combo con |"),
-      evaluateProfile(
-        lines,
-        withDetect({ mode: "csv", columnIndex: 0, separator: ",", columnPick: "auto_rut_email" }),
-        "CSV coma (columna automática)",
-      ),
-      evaluateProfile(
-        lines,
-        withDetect({ mode: "csv", columnIndex: 0, separator: ";", columnPick: "auto_rut_email" }),
-        "CSV punto y coma (columna automática)",
-      ),
-      evaluateProfile(
-        lines,
-        withDetect({ mode: "csv", columnIndex: 0, separator: "|", columnPick: "auto_rut_email" }),
-        "Tabla con | (columna automática)",
-      ),
-    ];
+    const candidates =
+      detect !== undefined
+        ? buildSuggestCandidates(lines, detect)
+        : [
+            ...buildSuggestCandidates(lines, "email_rut"),
+            ...buildSuggestCandidates(lines, "email_rut_plus_text"),
+          ];
 
     const ranked = [...candidates].sort((a, b) => b.score - a.score || b.stats.ok - a.stats.ok);
     const best = ranked[0]!;

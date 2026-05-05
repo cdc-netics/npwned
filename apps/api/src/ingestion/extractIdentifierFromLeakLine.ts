@@ -199,28 +199,67 @@ function extractEmailEmbeddedInUrlishLine(raw: string): string | null {
   return best;
 }
 
+function isLikelyUrlJunkSegment(s: string): boolean {
+  const t = s.trim();
+  if (!t) return true;
+  if (/^\(?https?:\/\//i.test(t)) return true;
+  if (/^\/\//.test(t)) return true;
+  if (/^[/.]+$/.test(t)) return true;
+  if (/\.(php|aspx?|jspx?|html?)$/i.test(t)) return true;
+  if (/^(index|login|signin|registro|register|checkout|action|page)([._-]|$)/i.test(t)) return true;
+  if (/^(single|input|bugfix|buscar|rut|usuario)$/i.test(t)) return true;
+  if (t.includes("UUID_SEPARATOR") || t.includes("AUTH_SEPARATOR") || t.includes("DID_SEPARATOR")) return true;
+  return false;
+}
+
+function looksPasswordLikeToken(s: string): boolean {
+  const t = s.trim();
+  if (t.length < 6) return false;
+  if (/\s/.test(t)) return false;
+  const hasLetter = /[a-z]/i.test(t);
+  const hasDigit = /\d/.test(t);
+  const hasSpecial = /[^a-z0-9._-]/i.test(t);
+  if (hasLetter && hasDigit && hasSpecial) return true;
+  if (/[!?$%&*#@^]/.test(t) && t.length >= 8) return true;
+  return false;
+}
+
+function chooseBestUrlColonCandidate(
+  segments: string[],
+  detect: IdentifierDetectMode,
+  stripQuotes: boolean | undefined,
+): { segment: string | null; segmentIndex?: number; reason?: string } {
+  let best: { idx: number; seg: string; score: number; reason: string } | null = null;
+  for (let i = 1; i < segments.length; i++) {
+    const seg = applyStripQuotes(segments[i] ?? "", stripQuotes);
+    if (!seg || isLikelyUrlJunkSegment(seg)) continue;
+    const n = normalizeUnknownIdentifier(seg, detect);
+    if (!n) continue;
+    let score = 10;
+    if (n.type === "email") score += 60;
+    else if (n.type === "rut_cl") score += 55;
+    else if (n.type === "national_id") score += 42;
+    else if (n.type === "internal_id") score += 32;
+    else if (n.type === "username") score += 28;
+    else if (n.type === "display_name") score += 20;
+    if (looksPasswordLikeToken(seg)) score -= 18;
+    if (seg.length > 80) score -= 10;
+    if (best === null || score > best.score) {
+      best = { idx: i, seg, score, reason: `${n.type}` };
+    }
+  }
+  if (!best) return { segment: null };
+  return {
+    segment: best.seg,
+    segmentIndex: best.idx,
+    reason: best.reason,
+  };
+}
+
 function splitOnFirst(line: string, delim: string): [string, string] | null {
   const i = line.indexOf(delim);
   if (i === -1) return null;
   return [line.slice(0, i), line.slice(i + delim.length)];
-}
-
-/**
- * URLs tipo Clave Única: `.../login/:rut:clave` o `.../login:rut:clave`.
- * El identificador es el tramo tras `/login` hasta el siguiente `:` (la contraseña no se usa).
- */
-export function extractUserSegmentAfterLoginPath(raw: string): string | null {
-  const lower = raw.toLowerCase();
-  const needle = "/login";
-  const i = lower.indexOf(needle);
-  if (i === -1) return null;
-  let rest = raw.slice(i + needle.length);
-  rest = rest.replace(/^\/+/, "");
-  rest = rest.replace(/^:+/, "");
-  if (!rest) return null;
-  const p = splitOnFirst(rest, ":");
-  const left = p?.[0]?.trim();
-  return left || null;
 }
 
 export type CredentialExtractDetail = { left: string | null; extractionMethod: string };
@@ -246,16 +285,6 @@ export function extractCredentialLeftFieldDetailed(
             "Combo: patrón host:id:clave detectado; se usa el segundo campo como identificador.",
         };
       }
-    }
-  }
-  if (raw.includes("://")) {
-    const fromLogin = extractUserSegmentAfterLoginPath(raw);
-    if (fromLogin) {
-      return {
-        left: fromLogin,
-        extractionMethod:
-          "URL con «/login»: texto entre «/login» y el primer «:» siguiente (clave no indexada).",
-      };
     }
   }
   if (delimiter === "auto") {
@@ -459,40 +488,30 @@ function extractCellForProfile(line: string, profile: LeakLineExtractionMode): E
   }
 
   if (profile.mode === "plain") {
-    if (raw.includes("://") && raw.toLowerCase().includes("/login")) {
-      const fromLogin = extractUserSegmentAfterLoginPath(raw);
-      if (fromLogin) {
-        const v = applyStripQuotes(fromLogin, profile.stripQuotes);
-        return {
-          cell: v || null,
-          extractionMethod:
-            "URL con «/login» (modo plano): se usa el tramo usuario entre «/login» y la clave; no hace falta modo Combo si cada línea es solo esa URL.",
-        };
-      }
-    }
     const colonParsed = splitHttpsUrlColonPath(raw);
     if (colonParsed && colonParsed.segments.length >= 2) {
       const detect = identifierDetectMode(profile);
-      for (let i = 1; i < colonParsed.segments.length; i++) {
-        const seg = applyStripQuotes(colonParsed.segments[i] ?? "", profile.stripQuotes);
-        if (!seg) continue;
-        const n = normalizeUnknownIdentifier(seg, detect);
-        if (n) {
-          return {
-            cell: seg,
-            extractionMethod: `Una celda (autom.): URL con campos «:» tras la ruta — trozo ${i} reconocido como ${n.type}; base «${colonParsed.baseUrl}».`,
-            urlColonIdentifierSegmentIndex: i,
-          };
-        }
+      const best = chooseBestUrlColonCandidate(colonParsed.segments, detect, profile.stripQuotes);
+      if (best.segment && best.segmentIndex !== undefined) {
+        return {
+          cell: best.segment,
+          extractionMethod: `Una celda (autom.): URL con campos «:» tras la ruta — trozo ${best.segmentIndex} priorizado (${best.reason}); base «${colonParsed.baseUrl}».`,
+          urlColonIdentifierSegmentIndex: best.segmentIndex,
+        };
       }
       const seg1 = applyStripQuotes(colonParsed.segments[1] ?? "", profile.stripQuotes);
-      if (seg1) {
+      if (seg1 && !isLikelyUrlJunkSegment(seg1)) {
         return {
           cell: seg1,
           extractionMethod: `Una celda (autom.): URL con «:» tras la ruta — trozo 1 como candidato (no coincide aún con correo/RUT${detect === "email_rut_plus_text" ? "/usuario/nombre" : ""}); base «${colonParsed.baseUrl}».`,
           urlColonIdentifierSegmentIndex: 1,
         };
       }
+      return {
+        cell: null,
+        extractionMethod:
+          "Una celda (autom.): URL con «:» tras la ruta, pero sin segmento identificable (solo ruta/placeholders o texto ambiguo).",
+      };
     }
     const embedded = extractEmailEmbeddedInUrlishLine(raw);
     if (embedded) {
