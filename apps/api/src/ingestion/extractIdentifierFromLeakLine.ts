@@ -104,6 +104,7 @@ const CREDENTIAL_AUTO_ORDER = ["\t", "|", ";", ":"] as const;
 export type NormalizedIdentifier = {
   type: "email" | "rut_cl" | "username" | "display_name" | "national_id" | "internal_id";
   value: string;
+  sourceDomain?: string;
 };
 
 export function identifierDetectMode(profile: LeakLineExtractionMode): IdentifierDetectMode {
@@ -113,6 +114,15 @@ export function identifierDetectMode(profile: LeakLineExtractionMode): Identifie
 /** Quita BOM UTF-8 al inicio de archivo si la primera línea lo trae pegado. */
 export function stripLeadingBom(s: string): string {
   return s.length > 0 && s.charCodeAt(0) === 0xfeff ? s.slice(1) : s;
+}
+
+function sourceDomainFromRawLine(raw: string): string | undefined {
+  const t = stripLeadingBom(raw).replace(/\r$/, "").trim();
+  const m = t.match(/^https?:\/\/([^/:?#\s]+)(?::\d+)?(?:[/?#]|$)/i);
+  if (!m) return undefined;
+  const host = (m[1] ?? "").trim().toLowerCase();
+  if (!host || host.length > 255) return undefined;
+  return host;
 }
 
 /** Pies de listado «Total de registros: 42» que el combo con «:» confundía con nombre válido. */
@@ -650,7 +660,10 @@ export function extractIdentifierFromLeakLine(
 ): NormalizedIdentifier | null {
   const { cell } = extractCellForProfile(line, profile);
   if (!cell) return null;
-  return normalizeUnknownIdentifier(cell, identifierDetectMode(profile));
+  const normalized = normalizeUnknownIdentifier(cell, identifierDetectMode(profile));
+  if (!normalized) return null;
+  const sourceDomain = sourceDomainFromRawLine(line);
+  return sourceDomain ? { ...normalized, sourceDomain } : normalized;
 }
 
 /** Resultado de inspección línea a línea (vista previa humana antes de indexar). */

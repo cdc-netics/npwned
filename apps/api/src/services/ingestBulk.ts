@@ -63,6 +63,7 @@ export async function ingestLinesFromReadable(
               type: n.type,
               value: n.value,
               breachId,
+              ...(n.sourceDomain ? { sourceDomain: n.sourceDomain } : {}),
               createdAt: new Date(),
             },
           },

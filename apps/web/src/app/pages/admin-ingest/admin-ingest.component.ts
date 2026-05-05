@@ -75,6 +75,7 @@ export class AdminIngestComponent implements OnInit {
   previewError = signal<string | null>(null);
   preview = signal<IngestPreviewResponse | null>(null);
   autoDetectInfo = signal<string | null>(null);
+  showAdvanced = signal(false);
 
   rowFilter = signal<RowFilter>("all");
   filteredRows = computed(() => {

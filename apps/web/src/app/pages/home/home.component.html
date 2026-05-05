@@ -122,6 +122,13 @@
       <pre class="email-dump mono">{{ r.displayNameMatches!.join("\n") }}</pre>
     </ng-container>
 
+    <ng-container *ngIf="r.matchedDomains?.length">
+      <p class="muted">
+        <strong>Dominios donde aparece en la filtración:</strong> {{ r.matchedDomains!.length }}
+      </p>
+      <pre class="email-dump mono">{{ r.matchedDomains!.join("\n") }}</pre>
+    </ng-container>
+
     <p class="muted" *ngIf="!r.wildcard">
       Aparece en las bases cargadas con el siguiente detalle agregado.
     </p>

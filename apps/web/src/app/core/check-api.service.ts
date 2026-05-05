@@ -36,6 +36,8 @@ export interface CheckResponse {
   /** Valores distintos en índice para la búsqueda por nombre (misma lógica que el servidor). */
   displayNameMatches?: string[];
   displayNameMatchesTruncated?: boolean;
+  /** Dominios fuente detectados en el dump (cuando la línea incluía URL/host). */
+  matchedDomains?: string[];
 }
 
 /**

@@ -66,7 +66,7 @@ publicRouter.post("/check", limiteConsultaPublica, async (req, res) => {
 
   let queryType: "email" | "rut_cl" | "username" | "display_name" = "email";
   let domain: string | undefined;
-  type IdxRow = { breachId: unknown; value?: unknown };
+  type IdxRow = { breachId: unknown; value?: unknown; sourceDomain?: unknown };
   let rows: IdxRow[] = [];
   let wildcardEmail = false;
   let matchCountTruncated = false;
@@ -84,7 +84,7 @@ publicRouter.post("/check", limiteConsultaPublica, async (req, res) => {
       const foundRows = (await db
         .collection(col.leakIndex)
         .find({ type: "email", value: wild })
-        .project({ breachId: 1, value: 1 })
+        .project({ breachId: 1, value: 1, sourceDomain: 1 })
         .limit(EMAIL_WILDCARD_ROW_CAP + 1)
         .toArray()) as IdxRow[];
       matchCountTruncated = foundRows.length > EMAIL_WILDCARD_ROW_CAP;
@@ -110,7 +110,7 @@ publicRouter.post("/check", limiteConsultaPublica, async (req, res) => {
       rows = (await db
         .collection(col.leakIndex)
         .find({ type: "email", value: normalized })
-        .project({ breachId: 1 })
+        .project({ breachId: 1, sourceDomain: 1 })
         .toArray()) as IdxRow[];
     }
   } else if (kind === "rut") {
@@ -134,7 +134,7 @@ publicRouter.post("/check", limiteConsultaPublica, async (req, res) => {
     rows = (await db
       .collection(col.leakIndex)
       .find({ type: "rut_cl", value: normalized })
-      .project({ breachId: 1 })
+      .project({ breachId: 1, sourceDomain: 1 })
       .toArray()) as IdxRow[];
   } else if (kind === "username") {
     queryType = "username";
@@ -157,14 +157,14 @@ publicRouter.post("/check", limiteConsultaPublica, async (req, res) => {
     const rowUser = (await db
       .collection(col.leakIndex)
       .find({ type: "username", value: normalized })
-      .project({ breachId: 1 })
+      .project({ breachId: 1, sourceDomain: 1 })
       .toArray()) as IdxRow[];
 
     const emailLocalRe = new RegExp(`^${escapeRegExpChars(normalized)}@`, "i");
     const rowEmailRaw = (await db
       .collection(col.leakIndex)
       .find({ type: "email", value: emailLocalRe })
-      .project({ breachId: 1, value: 1 })
+      .project({ breachId: 1, value: 1, sourceDomain: 1 })
       .limit(USERNAME_EMAIL_LOCAL_ROW_CAP + 1)
       .toArray()) as IdxRow[];
 
@@ -201,7 +201,7 @@ publicRouter.post("/check", limiteConsultaPublica, async (req, res) => {
       .collection(col.leakIndex)
       .find({ type: "display_name", value: normalized })
       .collation(DISPLAY_NAME_COLLATION)
-      .project({ breachId: 1, value: 1 })
+      .project({ breachId: 1, value: 1, sourceDomain: 1 })
       .limit(DISPLAY_NAME_PUBLIC_ROW_CAP + 1)
       .toArray()) as IdxRow[];
 
@@ -239,6 +239,14 @@ publicRouter.post("/check", limiteConsultaPublica, async (req, res) => {
     );
     wildcardEmails = emails;
   }
+
+  const matchedDomains = [
+    ...new Set(
+      rows
+        .map((r) => String(r.sourceDomain ?? "").trim().toLowerCase())
+        .filter((d) => d.length > 0),
+    ),
+  ].sort((a, b) => a.localeCompare(b, "und"));
 
   await db.collection(col.searchEvents).insertOne({
     at: new Date(),
@@ -300,5 +308,6 @@ publicRouter.post("/check", limiteConsultaPublica, async (req, res) => {
           displayNameMatchesTruncated: displayNameRowsTruncated,
         }
       : {}),
+    ...(matchedDomains.length ? { matchedDomains } : {}),
   });
 });
