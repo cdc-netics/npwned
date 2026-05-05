@@ -12,7 +12,9 @@ import { limiteLoginAdmin } from "../middleware/rateLimits.js";
 import { requireAdmin } from "../middleware/requireAdmin.js";
 import {
   normalizeEmailForLeakLine,
+  normalizeForeignOrGenericNationalId,
   normalizeLeakDisplayName,
+  normalizeInternalSystemId,
   normalizeLeakUsername,
   normalizeRutCl,
 } from "../normalizers.js";
@@ -259,7 +261,7 @@ adminRouter.post("/breaches/delete-with-index", requireAdmin, async (req, res) =
 const deleteLeakIndexEntrySchema = z
   .object({
     breachId: z.string().regex(/^[a-f0-9]{24}$/i),
-    type: z.enum(["email", "rut_cl", "username", "display_name"]),
+    type: z.enum(["email", "rut_cl", "username", "display_name", "national_id", "internal_id"]),
     value: z.string().min(1).max(400),
   })
   .refine((b) => !hasBinaryOrBidiGarbage(b.value), {
@@ -287,7 +289,9 @@ adminRouter.post("/leak-index/delete-entry", requireAdmin, async (req, res) => {
   if (type === "email") canonical = normalizeEmailForLeakLine(rawVal);
   else if (type === "rut_cl") canonical = normalizeRutCl(rawVal);
   else if (type === "username") canonical = normalizeLeakUsername(rawVal);
-  else canonical = normalizeLeakDisplayName(rawVal);
+  else if (type === "display_name") canonical = normalizeLeakDisplayName(rawVal);
+  else if (type === "national_id") canonical = normalizeForeignOrGenericNationalId(rawVal);
+  else canonical = normalizeInternalSystemId(rawVal);
 
   if (!canonical) {
     res.status(400).json({ error: "invalid_value", message: "El valor no se puede normalizar como ese tipo." });

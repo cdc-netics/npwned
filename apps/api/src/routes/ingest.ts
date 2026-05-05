@@ -11,6 +11,7 @@ import {
   normalizeUnknownIdentifier,
   peekLeakLineParse,
   type LeakLineExtractionMode,
+  type LeakLinePeekRow,
 } from "../ingestion/extractIdentifierFromLeakLine.js";
 import { leakProfileSchema } from "../ingestion/ingestProfileZod.js";
 import { ingestLinesFromReadable } from "../services/ingestBulk.js";
@@ -41,6 +42,52 @@ const previewBodySchema = z
     }
   });
 
+const suggestBodySchema = z
+  .object({
+    lines: z.array(z.string().max(MAX_PREVIEW_LINE_CHARS)).min(1).max(2500),
+    detect: z.enum(["email_rut", "email_rut_plus_text"]).optional(),
+  })
+  .superRefine((data, ctx) => {
+    let total = 0;
+    for (const line of data.lines) {
+      total += line.length;
+    }
+    if (total > MAX_PREVIEW_TOTAL_CHARS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Demasiado texto en conjunto (máx. ${MAX_PREVIEW_TOTAL_CHARS} caracteres).`,
+        path: ["lines"],
+      });
+    }
+  });
+
+type SuggestCandidate = {
+  profile: LeakLineExtractionMode;
+  label: string;
+  stats: { ok: number; skipLine: number; noCell: number; invalidId: number };
+  score: number;
+};
+
+function profileScore(stats: SuggestCandidate["stats"]): number {
+  return stats.ok * 3 - stats.invalidId * 1.2 - stats.noCell * 0.6 - stats.skipLine * 0.05;
+}
+
+function evaluateProfile(lines: string[], profile: LeakLineExtractionMode, label: string): SuggestCandidate {
+  let ok = 0;
+  let skipLine = 0;
+  let noCell = 0;
+  let invalidId = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const row = peekLeakLineParse(lines[i]!, i + 1, profile);
+    if (row.status === "ok") ok++;
+    else if (row.status === "skip_line") skipLine++;
+    else if (row.status === "no_cell") noCell++;
+    else invalidId++;
+  }
+  const stats = { ok, skipLine, noCell, invalidId };
+  return { profile, label, stats, score: profileScore(stats) };
+}
+
 ingestRouter.post(
   "/preview-lines",
   /** Líneas largas en JSON escapan y crecen; margen holgado sobre ~1,8 MB de texto en cliente. */
@@ -62,6 +109,77 @@ ingestRouter.post(
       invalidId: rows.filter((r) => r.status === "invalid_id").length,
     };
     res.json({ stats, rows });
+  },
+);
+
+/** Prueba perfiles frecuentes y recomienda el más útil para un dump desordenado. */
+ingestRouter.post(
+  "/suggest-profile",
+  express.json({ limit: "32mb" }),
+  requireAdmin,
+  (req, res) => {
+    const parsed = suggestBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "invalid_body", details: parsed.error.flatten() });
+      return;
+    }
+    const { lines, detect } = parsed.data;
+    const withDetect = <T extends LeakLineExtractionMode>(p: T): T =>
+      detect ? ({ ...p, detect } as T) : p;
+
+    const candidates: SuggestCandidate[] = [
+      evaluateProfile(lines, withDetect({ mode: "plain" }), "Una celda por línea"),
+      evaluateProfile(
+        lines,
+        withDetect({ mode: "credential_pair", delimiter: "auto" }),
+        "Combo automático (tab/|/;/:)",
+      ),
+      evaluateProfile(lines, withDetect({ mode: "credential_pair", delimiter: ":" }), "Combo con :"),
+      evaluateProfile(lines, withDetect({ mode: "credential_pair", delimiter: "|" }), "Combo con |"),
+      evaluateProfile(
+        lines,
+        withDetect({ mode: "csv", columnIndex: 0, separator: ",", columnPick: "auto_rut_email" }),
+        "CSV coma (columna automática)",
+      ),
+      evaluateProfile(
+        lines,
+        withDetect({ mode: "csv", columnIndex: 0, separator: ";", columnPick: "auto_rut_email" }),
+        "CSV punto y coma (columna automática)",
+      ),
+      evaluateProfile(
+        lines,
+        withDetect({ mode: "csv", columnIndex: 0, separator: "|", columnPick: "auto_rut_email" }),
+        "Tabla con | (columna automática)",
+      ),
+    ];
+
+    const ranked = [...candidates].sort((a, b) => b.score - a.score || b.stats.ok - a.stats.ok);
+    const best = ranked[0]!;
+    const rows: LeakLinePeekRow[] = lines.slice(0, 300).map((line, i) => peekLeakLineParse(line, i + 1, best.profile));
+    res.json({
+      suggested: {
+        label: best.label,
+        profile: best.profile,
+        score: Number(best.score.toFixed(2)),
+        stats: best.stats,
+      },
+      ranked: ranked.slice(0, 5).map((r) => ({
+        label: r.label,
+        profile: r.profile,
+        score: Number(r.score.toFixed(2)),
+        stats: r.stats,
+      })),
+      preview: {
+        stats: {
+          linesSubmitted: rows.length,
+          ok: rows.filter((r) => r.status === "ok").length,
+          skipLine: rows.filter((r) => r.status === "skip_line").length,
+          noCell: rows.filter((r) => r.status === "no_cell").length,
+          invalidId: rows.filter((r) => r.status === "invalid_id").length,
+        },
+        rows,
+      },
+    });
   },
 );
 

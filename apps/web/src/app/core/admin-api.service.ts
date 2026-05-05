@@ -80,7 +80,7 @@ export interface IngestPreviewRow {
   extractedCell?: string;
   /** Cómo se obtuvo la celda desde la línea (perfil o heurística URL `/login`). */
   extractionMethod?: string;
-  type?: "email" | "rut_cl" | "username" | "display_name";
+  type?: "email" | "rut_cl" | "username" | "display_name" | "national_id" | "internal_id";
   value?: string;
   /** Partición `https://host/ruta:a:b…` para elegir segmentos en la UI (no se persiste). */
   urlColonBaseUrl?: string;
@@ -90,7 +90,11 @@ export interface IngestPreviewRow {
 }
 
 export type TryNormalizeResponse =
-  | { ok: true; type: "email" | "rut_cl" | "username" | "display_name"; value: string }
+  | {
+      ok: true;
+      type: "email" | "rut_cl" | "username" | "display_name" | "national_id" | "internal_id";
+      value: string;
+    }
   | { ok: false };
 
 export interface IngestPreviewResponse {
@@ -102,6 +106,32 @@ export interface IngestPreviewResponse {
     invalidId: number;
   };
   rows: IngestPreviewRow[];
+}
+
+export interface IngestProfileSuggestionResponse {
+  suggested: {
+    label: string;
+    profile: IngestProfile;
+    score: number;
+    stats: {
+      ok: number;
+      skipLine: number;
+      noCell: number;
+      invalidId: number;
+    };
+  };
+  ranked: {
+    label: string;
+    profile: IngestProfile;
+    score: number;
+    stats: {
+      ok: number;
+      skipLine: number;
+      noCell: number;
+      invalidId: number;
+    };
+  }[];
+  preview: IngestPreviewResponse;
 }
 
 export interface IngestCommitResponse {
@@ -215,6 +245,17 @@ export class AdminApiService {
     });
   }
 
+  /** Sugiere automáticamente el perfil de lectura para un dump caótico y devuelve vista previa. */
+  suggestIngestProfile(
+    lines: string[],
+    detect?: IdentifierDetectMode,
+  ): Observable<IngestProfileSuggestionResponse> {
+    return this.http.post<IngestProfileSuggestionResponse>("/api/admin/ingest/suggest-profile", {
+      lines,
+      detect,
+    });
+  }
+
   /** Prueba un candidato con la misma normalización que la ingesta (según `detect` del perfil). */
   tryNormalizeCandidate(
     candidate: string,
@@ -242,7 +283,7 @@ export class AdminApiService {
   /** Elimina una entrada del índice (valor canónico como en la ingesta). */
   deleteLeakIndexEntry(body: {
     breachId: string;
-    type: "email" | "rut_cl" | "username" | "display_name";
+    type: "email" | "rut_cl" | "username" | "display_name" | "national_id" | "internal_id";
     value: string;
   }): Observable<{ ok: boolean; deletedCount: number }> {
     return this.http.post<{ ok: boolean; deletedCount: number }>(

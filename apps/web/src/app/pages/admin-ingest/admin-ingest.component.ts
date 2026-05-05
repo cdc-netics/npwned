@@ -10,6 +10,7 @@ import {
   IngestProfile,
   IngestCommitResponse,
   IdentifierDetectMode,
+  IngestProfileSuggestionResponse,
 } from "../../core/admin-api.service";
 
 const MAX_PREVIEW_LINES = 2500;
@@ -70,8 +71,10 @@ export class AdminIngestComponent implements OnInit {
   @ViewChild("ingestFileInput") private ingestFileInput?: ElementRef<HTMLInputElement>;
 
   previewLoading = signal(false);
+  suggestLoading = signal(false);
   previewError = signal<string | null>(null);
   preview = signal<IngestPreviewResponse | null>(null);
+  autoDetectInfo = signal<string | null>(null);
 
   rowFilter = signal<RowFilter>("all");
   filteredRows = computed(() => {
@@ -230,6 +233,7 @@ export class AdminIngestComponent implements OnInit {
     this.commitOutcomes.set([]);
     this.commitProgressLabel.set(null);
     this.previewError.set(null);
+    this.autoDetectInfo.set(null);
     this.commitError.set(null);
     this.clearAllRepairs();
   }
@@ -240,6 +244,7 @@ export class AdminIngestComponent implements OnInit {
     this.commitOutcomes.set([]);
     this.commitProgressLabel.set(null);
     this.previewError.set(null);
+    this.autoDetectInfo.set(null);
     this.commitError.set(null);
     this.clearAllRepairs();
   }
@@ -337,6 +342,7 @@ export class AdminIngestComponent implements OnInit {
       return;
     }
     this.previewLoading.set(true);
+    this.autoDetectInfo.set(null);
     this.preview.set(null);
     const slice = file.slice(0, MAX_PREVIEW_BYTES);
     const reader = new FileReader();
@@ -358,6 +364,81 @@ export class AdminIngestComponent implements OnInit {
     };
     reader.onerror = () => {
       this.previewLoading.set(false);
+      this.previewError.set("No se pudo leer el archivo.");
+    };
+    reader.readAsText(slice, "UTF-8");
+  }
+
+  private applySuggestedProfile(profile: IngestProfile): void {
+    this.detectPlusText = profile.detect === "email_rut_plus_text";
+    if (profile.mode === "plain") {
+      this.profileMode = "plain";
+      return;
+    }
+    if (profile.mode === "credential_pair") {
+      this.profileMode = "combo";
+      this.comboDelimiter = profile.delimiter;
+      return;
+    }
+    if (profile.mode === "csv") {
+      this.profileMode = "csv";
+      this.csvSeparator = profile.separator ?? ",";
+      this.csvAutoColumn = profile.columnPick === "auto_rut_email";
+      this.csvColumnIndex = profile.columnIndex;
+      return;
+    }
+    if (profile.mode === "regex_capture") {
+      this.profileMode = "regex";
+      this.regexPattern = profile.pattern;
+      this.regexCaptureGroup = profile.captureGroupIndex ?? 1;
+      const flags = profile.flags ?? "";
+      this.regexFlagI = flags.includes("i");
+      this.regexFlagM = flags.includes("m");
+      return;
+    }
+    if (profile.mode === "https_path_colons") {
+      this.profileMode = "plain";
+      return;
+    }
+    this.profileMode = "plain";
+  }
+
+  autoDetectProfile(): void {
+    const file = this.previewSourceFile();
+    this.previewError.set(null);
+    this.autoDetectInfo.set(null);
+    if (!file) {
+      this.previewError.set("Selecciona al menos un archivo.");
+      return;
+    }
+    this.suggestLoading.set(true);
+    this.preview.set(null);
+    const slice = file.slice(0, MAX_PREVIEW_BYTES);
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = typeof reader.result === "string" ? reader.result : "";
+      const lines = text.split(/\r?\n/).slice(0, MAX_PREVIEW_LINES);
+      const detect: IdentifierDetectMode = this.detectPlusText
+        ? "email_rut_plus_text"
+        : "email_rut";
+      this.adminApi.suggestIngestProfile(lines, detect).subscribe({
+        next: (res: IngestProfileSuggestionResponse) => {
+          this.applySuggestedProfile(res.suggested.profile);
+          this.clearAllRepairs();
+          this.preview.set(res.preview);
+          this.autoDetectInfo.set(
+            `Perfil sugerido: ${res.suggested.label} (score ${res.suggested.score}).`,
+          );
+          this.suggestLoading.set(false);
+        },
+        error: (err) => {
+          this.suggestLoading.set(false);
+          this.previewError.set(this.formatPreviewHttpError(err));
+        },
+      });
+    };
+    reader.onerror = () => {
+      this.suggestLoading.set(false);
       this.previewError.set("No se pudo leer el archivo.");
     };
     reader.readAsText(slice, "UTF-8");
@@ -609,6 +690,10 @@ export class AdminIngestComponent implements OnInit {
         return "usuario";
       case "display_name":
         return "nombre";
+      case "national_id":
+        return "id nacional";
+      case "internal_id":
+        return "id interno";
       default:
         return String(t ?? "");
     }

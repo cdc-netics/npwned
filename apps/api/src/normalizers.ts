@@ -249,6 +249,8 @@ export function normalizeLeakDisplayName(input: string): string | null {
   const v = input.normalize("NFKC").trim().replace(/\s+/g, " ");
   if (v.length < 2 || v.length > 200) return null;
   if (/^\d+$/.test(v)) return null;
+  // Evita tratar dominios/hosts (foo.bar.tld) como "nombre".
+  if (v.includes(".") && !/\s|,/.test(v) && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(v)) return null;
   if (!/\p{L}/u.test(v)) return null;
   if (normalizeEmailForLeakLine(v)) return null;
   const rutish = v.replace(/\./g, "").replace(/\s/g, "");
@@ -256,4 +258,48 @@ export function normalizeLeakDisplayName(input: string): string | null {
   if (/[\u0000-\u001F\u007F]/.test(v)) return null;
   if (!/^[\p{L}\p{M}0-9\s'’.,"()/-]+$/u.test(v)) return null;
   return v;
+}
+
+/**
+ * ID alfanumérico "interno" (sistemas/empresas): exige letras y números para evitar ruido de nombres.
+ * Conserva solo [A-Z0-9], quitando separadores comunes.
+ */
+export function normalizeInternalSystemId(input: string): string | null {
+  const compact = input
+    .normalize("NFKC")
+    .toUpperCase()
+    .replace(/[\s._:/\\-]+/g, "")
+    .trim();
+  if (compact.length < 5 || compact.length > 40) return null;
+  if (!/^[A-Z0-9]+$/.test(compact)) return null;
+  if (!/[A-Z]/.test(compact) || !/[0-9]/.test(compact)) return null;
+  if (normalizeRutCl(compact)) return null;
+  if (normalizeEmailForLeakLine(compact)) return null;
+  return compact;
+}
+
+/**
+ * ID personal extranjero / nacional no-RUT:
+ * - 6..16 dígitos, opcional prefijo de letras (1..4) o sufijo alfanumérico corto.
+ * - Admite separadores visuales (`.`, `-`, espacio, `/`) y los canoniza.
+ */
+export function normalizeForeignOrGenericNationalId(input: string): string | null {
+  const raw = input.normalize("NFKC").toUpperCase().trim();
+  if (!raw) return null;
+  if (normalizeRutCl(raw)) return null;
+
+  const compact = raw.replace(/[.\-_\s/]+/g, "");
+  if (compact.length < 6 || compact.length > 24) return null;
+  if (!/^[A-Z0-9]+$/.test(compact)) return null;
+
+  // Caso muy común: solo dígitos (DNI/CC/CI/etc.).
+  if (/^\d{6,16}$/.test(compact)) return compact;
+
+  // Prefijo letras + bloque numérico largo (ej. AEPA640422EC2, OHLM02284325).
+  if (/^[A-Z]{1,6}\d{5,16}[A-Z0-9]{0,6}$/.test(compact)) return compact;
+
+  // Número largo con sufijo alfanumérico corto.
+  if (/^\d{6,16}[A-Z][A-Z0-9]{0,5}$/.test(compact)) return compact;
+
+  return null;
 }

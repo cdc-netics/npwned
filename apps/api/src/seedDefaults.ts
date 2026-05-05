@@ -2,7 +2,9 @@ import type { Db } from "mongodb";
 import { col } from "./db.js";
 import {
   normalizeEmail,
+  normalizeForeignOrGenericNationalId,
   normalizeLeakDisplayName,
+  normalizeInternalSystemId,
   normalizeLeakUsername,
   normalizeRutCl,
 } from "./normalizers.js";
@@ -58,6 +60,34 @@ export async function seedIdentifierCatalog(db: Db): Promise<void> {
     },
     {
       updateOne: {
+        filter: { key: "national_id" },
+        update: {
+          $set: {
+            label: "ID nacional extranjero / genérico",
+            normalizerId: "national_id",
+            updatedAt: now,
+          },
+          $setOnInsert: { key: "national_id", createdAt: now },
+        },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
+        filter: { key: "internal_id" },
+        update: {
+          $set: {
+            label: "ID interno de sistema",
+            normalizerId: "internal_id",
+            updatedAt: now,
+          },
+          $setOnInsert: { key: "internal_id", createdAt: now },
+        },
+        upsert: true,
+      },
+    },
+    {
+      updateOne: {
         filter: { key: "display_name" },
         update: {
           $set: {
@@ -99,11 +129,16 @@ export async function seedDemoDataset(db: Db): Promise<void> {
     { $set: { tags: ["demo", "desarrollo"] } },
   );
 
-  const samples: { type: "email" | "rut_cl" | "username" | "display_name"; raw: string }[] = [
+  const samples: {
+    type: "email" | "rut_cl" | "username" | "display_name" | "national_id" | "internal_id";
+    raw: string;
+  }[] = [
     { type: "email", raw: "demo@npwned.local" },
     { type: "rut_cl", raw: "12.345.678-5" },
     { type: "username", raw: "demo_user" },
     { type: "display_name", raw: "Usuario Demo" },
+    { type: "national_id", raw: "1234567890" },
+    { type: "internal_id", raw: "AEPA640422EC2" },
   ];
 
   for (const s of samples) {
@@ -114,7 +149,11 @@ export async function seedDemoDataset(db: Db): Promise<void> {
           ? normalizeRutCl(s.raw)
           : s.type === "username"
             ? normalizeLeakUsername(s.raw)
-            : normalizeLeakDisplayName(s.raw);
+            : s.type === "display_name"
+              ? normalizeLeakDisplayName(s.raw)
+              : s.type === "national_id"
+                ? normalizeForeignOrGenericNationalId(s.raw)
+                : normalizeInternalSystemId(s.raw);
     if (!value) continue;
     await db.collection(col.leakIndex).updateOne(
       { type: s.type, value, breachId },

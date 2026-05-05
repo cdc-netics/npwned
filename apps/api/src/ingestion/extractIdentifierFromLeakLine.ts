@@ -7,7 +7,9 @@
  */
 import {
   normalizeEmailForLeakLine,
+  normalizeForeignOrGenericNationalId,
   normalizeLeakDisplayName,
+  normalizeInternalSystemId,
   normalizeLeakUsername,
   normalizeRutCl,
 } from "../normalizers.js";
@@ -100,7 +102,7 @@ export type LeakLineExtractionMode =
 const CREDENTIAL_AUTO_ORDER = ["\t", "|", ";", ":"] as const;
 
 export type NormalizedIdentifier = {
-  type: "email" | "rut_cl" | "username" | "display_name";
+  type: "email" | "rut_cl" | "username" | "display_name" | "national_id" | "internal_id";
   value: string;
 };
 
@@ -232,6 +234,20 @@ export function extractCredentialLeftFieldDetailed(
   delimiter: CredentialDelimiter,
 ): CredentialExtractDetail {
   const raw = stripLeadingBom(line).replace(/\r$/, "");
+  const hostLike = raw.match(/^[a-z0-9.-]+\.[a-z]{2,}:/i);
+  if (hostLike) {
+    const parts = raw.split(":");
+    if (parts.length >= 3) {
+      const candidate = parts[1]?.trim() ?? "";
+      if (candidate) {
+        return {
+          left: candidate,
+          extractionMethod:
+            "Combo: patrón host:id:clave detectado; se usa el segundo campo como identificador.",
+        };
+      }
+    }
+  }
   if (raw.includes("://")) {
     const fromLogin = extractUserSegmentAfterLoginPath(raw);
     if (fromLogin) {
@@ -577,11 +593,28 @@ export function normalizeUnknownIdentifier(
   candidate: string,
   detect: IdentifierDetectMode = "email_rut",
 ): NormalizedIdentifier | null {
+  const candidateCompact = candidate
+    .normalize("NFKC")
+    .toUpperCase()
+    .replace(/[.\-_\s/]+/g, "")
+    .trim();
+  const explicitRutShape = /[.\-kK]/.test(candidate) || /^\d{6,8}[kK]$/.test(candidateCompact);
   const email = normalizeEmailForLeakLine(candidate);
   if (email) return { type: "email", value: email };
+  if (
+    detect === "email_rut_plus_text" &&
+    !explicitRutShape &&
+    /^\d{8,16}$/.test(candidateCompact)
+  ) {
+    return { type: "national_id", value: candidateCompact };
+  }
   const rut = normalizeRutCl(candidate);
   if (rut) return { type: "rut_cl", value: rut };
   if (detect !== "email_rut_plus_text") return null;
+  const nat = normalizeForeignOrGenericNationalId(candidate);
+  if (nat) return { type: "national_id", value: nat };
+  const internal = normalizeInternalSystemId(candidate);
+  if (internal) return { type: "internal_id", value: internal };
   const display = normalizeLeakDisplayName(candidate);
   if (display) return { type: "display_name", value: display };
   const user = normalizeLeakUsername(candidate);
@@ -612,7 +645,7 @@ export type LeakLinePeekRow = {
   extractedCell?: string;
   /** Cómo se obtuvo la celda a partir de la línea (perfil / heurística URL). */
   extractionMethod?: string;
-  type?: "email" | "rut_cl" | "username" | "display_name";
+  type?: "email" | "rut_cl" | "username" | "display_name" | "national_id" | "internal_id";
   value?: string;
   /** Si la línea encaja en `https://host/ruta:a:b…`, ayuda a elegir segmentos en la UI (no se persiste). */
   urlColonBaseUrl?: string;

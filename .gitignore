@@ -7,3 +7,5 @@ dist/
 coverage/
 *.tsbuildinfo
 2500.txt
+S2200.txt
+dump/*

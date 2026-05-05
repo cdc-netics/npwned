@@ -275,10 +275,11 @@
     <label class="field checkbox-line">
       <input type="checkbox" name="dpt" [(ngModel)]="detectPlusText" />
       <span
-        ><strong>También usuario / nombre</strong> — además de correo y RUT, indexa celdas como
+        ><strong>También usuario / nombre / otros ID</strong> — además de correo y RUT, indexa celdas como
         <em>usuario</em> (sin espacio, p. ej. <code>player_one</code>) o
         <em>nombre</em> o apodo con letras (p. ej. <code>Juan Pérez</code>, <code>Jose</code>; sin
-        <code>_</code> de nick).
+        <code>_</code> de nick), más <em>ID nacionales no RUT</em> (DNI/CC/CI/pasaporte fiscal) e
+        <em>ID internos</em> alfanuméricos de sistema.
         Desactivado por defecto para no llenar el índice con ruido.</span
       >
     </label>
@@ -324,10 +325,24 @@
     </p>
 
     <div class="btn-row">
-      <button type="button" class="primary" [disabled]="previewLoading()" (click)="runPreview()">
+      <button
+        type="button"
+        class="ghost-btn"
+        [disabled]="previewLoading() || suggestLoading()"
+        (click)="autoDetectProfile()"
+      >
+        {{ suggestLoading() ? "Detectando formato…" : "Autodetectar formato + vista previa" }}
+      </button>
+      <button
+        type="button"
+        class="primary"
+        [disabled]="previewLoading() || suggestLoading()"
+        (click)="runPreview()"
+      >
         {{ previewLoading() ? "Analizando…" : "Generar vista previa" }}
       </button>
     </div>
+    <p class="success" *ngIf="autoDetectInfo()">{{ autoDetectInfo() }}</p>
     <p class="error" *ngIf="previewError()">{{ previewError() }}</p>
   </div>
 
