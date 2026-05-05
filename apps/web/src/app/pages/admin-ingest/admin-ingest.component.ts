@@ -2,6 +2,7 @@ import { CommonModule } from "@angular/common";
 import { Component, ElementRef, OnInit, ViewChild, computed, signal } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { RouterLink } from "@angular/router";
+import { firstValueFrom } from "rxjs";
 import {
   AdminApiService,
   BreachRow,
@@ -468,6 +469,25 @@ export class AdminIngestComponent implements OnInit {
     return s ? `Error HTTP ${s}.` : "Falló la ingesta (sin respuesta).";
   }
 
+  private readFileSampleLines(file: File): Promise<string[]> {
+    return new Promise((resolve, reject) => {
+      const slice = file.slice(0, MAX_PREVIEW_BYTES);
+      const reader = new FileReader();
+      reader.onload = () => {
+        const text = typeof reader.result === "string" ? reader.result : "";
+        resolve(text.split(/\r?\n/).slice(0, MAX_PREVIEW_LINES));
+      };
+      reader.onerror = () => reject(new Error("No se pudo leer el archivo para autodetección."));
+      reader.readAsText(slice, "UTF-8");
+    });
+  }
+
+  private async detectProfileForFile(file: File): Promise<IngestProfile> {
+    const lines = await this.readFileSampleLines(file);
+    const suggested = await firstValueFrom(this.adminApi.suggestIngestProfile(lines));
+    return suggested.suggested.profile;
+  }
+
   commit(): void {
     const files = this.selectedFiles();
     this.commitError.set(null);
@@ -492,34 +512,30 @@ export class AdminIngestComponent implements OnInit {
     this.commitLoading.set(true);
     this.commitOutcomes.set([]);
     this.commitProgressLabel.set(null);
-    const profile = this.buildProfile();
+    const baseProfile = this.buildProfile();
     const breachId = this.breachId;
-    let i = 0;
-    const step = () => {
-      if (i >= files.length) {
-        this.commitLoading.set(false);
-        this.commitProgressLabel.set(null);
-        return;
-      }
-      const file = files[i]!;
-      this.commitProgressLabel.set(`Archivo ${i + 1} de ${files.length}: ${file.name}`);
-      this.adminApi.commitIngest(breachId, profile, file).subscribe({
-        next: (r) => {
+    const autoPerFile = !this.showAdvanced();
+    void (async () => {
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]!;
+        try {
+          let profile = baseProfile;
+          if (autoPerFile) {
+            this.commitProgressLabel.set(`Archivo ${i + 1}/${files.length}: detectando perfil en ${file.name}`);
+            profile = await this.detectProfileForFile(file);
+          }
+          this.commitProgressLabel.set(`Archivo ${i + 1}/${files.length}: indexando ${file.name}`);
+          const r = await firstValueFrom(this.adminApi.commitIngest(breachId, profile, file));
           this.commitOutcomes.update((rows) => [...rows, { fileName: file.name, result: r }]);
-          i++;
-          step();
-        },
-        error: (err) => {
-          this.commitOutcomes.update((rows) => [
-            ...rows,
-            { fileName: file.name, error: this.formatCommitHttpError(err) },
-          ]);
-          i++;
-          step();
-        },
-      });
-    };
-    step();
+        } catch (err) {
+          const e = err as { status?: number };
+          const msg = this.formatCommitHttpError(e);
+          this.commitOutcomes.update((rows) => [...rows, { fileName: file.name, error: msg }]);
+        }
+      }
+      this.commitLoading.set(false);
+      this.commitProgressLabel.set(null);
+    })();
   }
 
   statusLabel(s: IngestPreviewRow["status"]): string {

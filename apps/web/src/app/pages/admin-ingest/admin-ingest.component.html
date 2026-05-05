@@ -297,6 +297,9 @@
       La vista previa usa como máximo los primeros {{ maxPreviewLines }} líneas o ~1,8 MB del
       <strong>archivo elegido arriba</strong>; la confirmación indexa <strong>todos</strong> los
       seleccionados, cada uno entero.
+      <ng-container *ngIf="!showAdvanced()">
+        En modo simple, cada archivo se autodetecta por separado antes de indexar.
+      </ng-container>
     </p>
 
     <div class="btn-row">
